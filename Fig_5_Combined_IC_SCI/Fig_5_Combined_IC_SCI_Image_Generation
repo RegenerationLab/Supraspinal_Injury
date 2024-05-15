@@ -1,0 +1,205 @@
+
+#Load required libraries
+
+library('Seurat')
+library('ggplot2')
+library('plyr')
+library('dplyr')
+library('viridis')
+library('scCustomize')
+library('ggthemes')
+library('plotly')
+library('cowplot')
+library('ggrepel')
+
+#Set directory to load library (this will vary by the user)
+
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_5_Intracortical_2")
+
+#load your RDS file
+ICSC_3d_1 <- readRDS("ICSC_3d_1.rds")
+
+#Set directory to store images (this will vary by the user)
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_5_Intracortical_2/Figure_Panels")
+
+
+ICSC_3d_1=readRDS("ICSC_3d_1.rds")
+
+#### Generate Figure 5A (Dimplot)
+DimPlot(ICSC_3d_1, reduction = "umap", label = FALSE, pt.size = 1, 
+        label.size = 0, group.by =  "injury.status", cols = c("#FD9587","#8AAFD5","#FFB65A","#BE7FBE"),alpha = 0.3,
+        order = FALSE
+) + NoLegend() + NoAxes() #+ scale_x_reverse()
+ggsave("Fig_5A_Dimplot.png",height = 4,width = 4,dpi = 300,units = "in")
+
+
+#### Generate Figure 5B (Feature Plots)
+
+pal <- viridis(n = 10, option = "D")
+
+FeaturePlot_scCustom(seurat_object = ICSC_3d_1,pt.size = 1, features = "Creb5", colors_use = pal, order = T) & NoAxes() + theme(axis.text = element_text(size = 20),text = element_text (size = 20))
+ggsave("Fig_5B_Creb5.png",height = 4,width = 4,dpi = 300,units = "in")
+
+FeaturePlot_scCustom(seurat_object = ICSC_3d_1,pt.size = 1, features = "Atf3", colors_use = pal, order = T) & NoAxes() + theme(axis.text = element_text(size = 20),text = element_text (size = 20))
+ggsave("Fig_5B_Atf3.png",height = 4,width = 4,dpi = 300,units = "in")
+
+FeaturePlot_scCustom(seurat_object = ICSC_3d_1,pt.size = 1, features = "Sprr1a", colors_use = pal, order = T) & NoAxes() + theme(axis.text = element_text(size = 20),text = element_text (size = 20))
+ggsave("Fig_5B_Sprr1a.png",height = 4,width = 4,dpi = 300,units = "in")
+
+FeaturePlot_scCustom(seurat_object = ICSC_3d_1,pt.size = 1, features = "Sox11", colors_use = pal, order = T) & NoAxes() + theme(axis.text = element_text(size = 20),text = element_text (size = 20))
+ggsave("Fig_5B_Sox11.png",height = 4,width = 4,dpi = 300,units = "in")
+
+FeaturePlot_scCustom(seurat_object = ICSC_3d_1,pt.size = 1, features = "Stat3", colors_use = pal, order = T) & NoAxes() + theme(axis.text = element_text(size = 20),text = element_text (size = 20))
+ggsave("Fig_5B_Stat3.png",height = 4,width = 4,dpi = 300,units = "in")
+
+FeaturePlot_scCustom(seurat_object = ICSC_3d_1,pt.size = 1, features = "Klf6", colors_use = pal, order = T) & NoAxes() + theme(axis.text = element_text(size = 20),text = element_text (size = 20))
+ggsave("Fig_5B_Klf6.png",height = 4,width = 4,dpi = 300,units = "in")
+
+
+
+
+#####Generate Figure 5D - MA Plots
+
+#Select which data to plot by silencing other two commands
+#deg_data <- read.csv("ICSC_SCI_DEGs.csv")
+deg_data <- read.csv("ICSC_IC_DEGs.csv")
+
+plot_data <- deg_data %>%
+  filter(!grepl("Rik", X), !grepl("^Gm", X),!grepl("Grik", X),!grepl("CAG", X),!grepl("H2B", X),!grepl("80B", X))
+
+#Select genes to label in the plot
+
+plot_data$mark <- ''  # Reset the column
+#selected Gene list
+specific_genes = c("Atf3","Jun","Stat3","Etv1","Fgf1","Sox11","Npas4","Sprr1a","Creb5")
+#Total set: "Sox11" "Npas4" "Sprr1a"
+
+
+#Set text sizes
+inset_text <- 5
+axis_text_size <- 15
+axis_label_size <- 18
+gene_label_size <- 5
+
+#Create plot
+
+plot_data$mark[plot_data$X %in% specific_genes] <- 'specific_gene'
+plot_data$average_expression <- rowMeans(plot_data[,c("pct.1", "pct.2")])
+plot_data$color <- ifelse(plot_data$avg_log2FC >1 & plot_data$p_val_adj < 0.05, "green", ifelse(plot_data$avg_log2FC < -1 & plot_data$p_val_adj < 0.05, "red", "grey"))
+num_upregulated <- sum(plot_data$avg_log2FC > 1 & plot_data$p_val_adj < 0.05)
+num_downregulated <- sum(plot_data$avg_log2FC < -1 & plot_data$p_val_adj < 0.05)
+
+ma_plot <- ggplot(plot_data, aes(x=average_expression, y=avg_log2FC, color=color)) +
+  geom_point(alpha=0.5) +
+  geom_point(data=plot_data[plot_data$mark == 'specific_gene',], aes(x=average_expression, y=avg_log2FC), color="black", size=3, shape=21, fill=plot_data[plot_data$mark == 'specific_gene',]$color) +  # Add bordered points for specific genes
+  geom_text_repel(data = plot_data[plot_data$X %in% specific_genes, ], aes(label = X, x = average_expression, y = avg_log2FC), size=gene_label_size, box.padding = .5, point.padding = 0.5, segment.color = 'black',color = "black") +  # Use ggrepel
+  scale_color_identity() +
+  geom_hline(yintercept = 0, color="black", alpha=0.7, linetype="dashed") +
+  geom_hline(yintercept = 1, color="green", linetype="dashed") +
+  geom_hline(yintercept = -1, color="red", linetype="dashed") +
+  xlab("Average Expression") + ylab("Log2 Fold Change") +
+  theme_few() +
+  theme(axis.text = element_text(size = axis_text_size)) +
+  theme(axis.title = element_text(size = axis_label_size)) +
+  scale_y_continuous(limits=c(-7, 7), breaks=seq(-7, 7, by=1)) +
+  annotate("text", x = Inf, y = Inf, label = paste("Upregulated:", num_upregulated, "\nDownregulated:", num_downregulated), vjust=1.05, hjust=1.05, size=inset_text, color="black")
+# Print the plot
+print(ma_plot)
+
+#Save the plot (select the correct name, matched to which dataset is inputed above)
+#ggsave("Fig_5D_SCI_MA.png",height = 3.5,width = 5,dpi = 300,units = "in",bg = "white")
+ggsave("Fig_5D_IC_MA.png",height = 3.5,width = 5,dpi = 300,units = "in",bg = "white")
+
+
+
+#Generate Figure 5e - Heatmaps
+
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_5_Intracortical_2/Figure_Panels")
+
+
+# Read the data from CSV
+data <- read.csv("Fig_5_ICSC_heatmap.csv")
+df=data[,-1]
+data_matrix=data.matrix(df)
+
+library(ComplexHeatmap)
+library(circlize)
+row.names(data_matrix)=data$X
+png("Fig_5E_Heatmap.png",width = 4, height = 8, units = "in", bg = "white", res = 300)
+my_col_fun <- colorRamp2(c(-7, 0, 7), c("red", "white", "darkgreen"))
+# List of genes to mark
+genes_to_mark <- c("Jun", "Atf3", "Sox11", "Stat3", "Sprr1a", "Klf6",
+                   "Tubb2b", "Gabra1", "Gabra5", "Kcnq5", "Etv1","Etv5","Nr4a1","Rph3a")
+
+# Create a logical vector for marking genes
+mark_genes <- row.names(data_matrix) %in% genes_to_mark
+
+# Create row annotation based on marked genes
+gene_annotation <- rowAnnotation(mark = anno_mark(at = which(mark_genes), labels = row.names(data_matrix)[mark_genes], which = "row"))
+
+H1=Heatmap(data_matrix[,1:2], 
+           col = my_col_fun, 
+           border = TRUE, 
+           show_row_names = FALSE, 
+           name = "foldchange", 
+           cluster_rows = TRUE, 
+           cluster_columns = FALSE,
+           right_annotation = gene_annotation)
+H1
+png("Fig_5E_Heatmap.png",width = 4, height = 8, units = "in", bg = "white", res = 300)
+H1
+dev.off()
+H1
+
+#Generate Figure 5e - Barplots
+
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_5_Intracortical_2/Figure_Panels")
+
+
+
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Read the data
+data <- read.csv("Fig_5_barplot_genes.csv")
+data_long <- data %>% 
+  pivot_longer(
+    cols = c(SCI, IC),
+    names_to = "Condition",
+    values_to = "ExpressionLevel"
+  )
+
+genes <- unique(data$Gene_name)
+
+# Create a directory for the plots if it does not exist
+plot_dir <- "gene_plots"
+if (!dir.exists(plot_dir)) {
+  dir.create(plot_dir)
+}
+
+# Loop through each gene to create a separate plot
+for(gene in genes) {
+  # Filter the data for the current gene
+  gene_data <- data_long[data_long$Gene_name == gene,]
+  
+  # Create the bar plot using ggplot for the current gene
+  p <- ggplot(gene_data, aes(x = Condition, y = ExpressionLevel, fill = Condition)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.8), show.legend = FALSE) +
+    #geom_text(aes(label = sprintf("%.2f", ExpressionLevel)),   # Format the label to show 2 decimal places
+    #          position = position_dodge(width = 0.8), vjust = -0.3) +  # Adjust text position and vertical justification
+    scale_fill_manual(values = c("SCI" = "#95AAD3", "IC" = "#FFB560")) +
+    labs(x = "", y = "", title = paste(gene)) +
+    theme_classic() +
+    theme(axis.text=element_text(size=10))+
+    theme(axis.text.x = element_text(angle = 0, hjust = 0.5))   # Adjust text alignment for better readability
+  # + scale_y_continuous(limits = c(-1, NA))  # Set y-axis starting from -1, upper limit is flexible
+  
+  # Show the plot
+  print(p)
+  
+  # Save the plot (optional)
+  file_name <- paste("gene_expression_", gene, ".png", sep="")
+  ggsave(file_name, plot = p, width = 1, height = 2,dpi = 300,units = "in")  # Adjust dimensions as needed
+}
