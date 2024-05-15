@@ -1,0 +1,520 @@
+#This script inputs six rds files (3 injured, 3 uninjured) of lumbar-
+#projecting neurons.
+#It performs QC, combines and normalizes the files, then assigns
+#identity to clusters based on marker genes.
+
+#The output is LMN_Final.rds (Lumbar_Merged_Normalized_Final)
+
+# Load libraries
+library('Seurat')
+library('ggplot2')
+library('plyr')
+library('dplyr')
+
+#set working directory (will vary by the user)
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_1_Lumbar_Injury_Response")
+
+
+#########   Input Data    ###########################################
+
+Sample1.data <- Read10X(data.dir = "SourceFiles/LU2")
+Sample1 <- CreateSeuratObject(counts = Sample1.data, project = "Sample1", 
+                              min.cells = 3, min.features = 1000)
+Sample1 
+# Initially 2679
+VlnPlot(Sample1, features = c("nFeature_RNA"))
+Sample1 <- subset(Sample1, subset = nFeature_RNA > 1000 & nFeature_RNA < 6000)
+Sample1 
+# Now 2654
+
+Sample2.data <- Read10X(data.dir = "SourceFiles/LU3")
+Sample2 <- CreateSeuratObject(counts = Sample2.data, project = "Sample2", 
+                              min.cells = 3, min.features = 1000)
+Sample2 
+# Initially 2770
+VlnPlot(Sample2, features = c("nFeature_RNA"))
+Sample2 <- subset(Sample2, subset = nFeature_RNA > 1000 & nFeature_RNA < 8000)
+Sample2 
+# Now 2608
+
+Sample3.data <- Read10X(data.dir = "SourceFiles/LU4")
+Sample3 <- CreateSeuratObject(counts = Sample3.data, project = "Sample3", 
+                              min.cells = 3, min.features = 1000)
+Sample3
+#Initially 3579
+VlnPlot(Sample3, features = c("nFeature_RNA"))
+Sample3 <- subset(Sample3, subset = nFeature_RNA > 1000 & nFeature_RNA < 7000)
+Sample3
+#Now 3518
+
+Sample4.data <- Read10X(data.dir = "SourceFiles/LI1")
+Sample4 <- CreateSeuratObject(counts = Sample4.data, project = "Sample4", 
+                              min.cells = 3, min.features = 1000)
+
+Sample4 #indicates 2778
+VlnPlot(Sample4, features = c("nFeature_RNA"))
+Sample4 <- subset(Sample4, subset = nFeature_RNA > 1000 & nFeature_RNA < 5500)
+Sample4 #now 2744
+
+Sample5.data <- Read10X(data.dir = "SourceFiles/LI2")
+Sample5 <- CreateSeuratObject(counts = Sample5.data, project = "Sample5", 
+                              min.cells = 3, min.features = 1000)
+Sample5 #indicates 2487
+VlnPlot(Sample5, features = c("nFeature_RNA"))
+Sample5 <- subset(Sample5, subset = nFeature_RNA > 1000 & nFeature_RNA < 7500)
+Sample5 #now 2470
+
+Sample6.data <- Read10X(data.dir = "SourceFiles/LI3")
+Sample6 <- CreateSeuratObject(counts = Sample6.data, project = "Sample6", 
+                              min.cells = 3, min.features = 1000)
+Sample6 #indicates 3143
+VlnPlot(Sample6, features = c("nFeature_RNA"))
+Sample6 <- subset(Sample6, subset = nFeature_RNA > 1000 & nFeature_RNA < 7500)
+Sample6 #now 3089
+
+############# Merge Data #####################
+#merge the six datasets
+
+LMN_merge.list <- list (Sample1, Sample2, Sample3, Sample4, Sample5, Sample6)
+
+LMN_merge.list <- lapply(X=LMN_merge.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+features <- SelectIntegrationFeatures(object.list = LMN_merge.list)
+
+LMN_merge.anchors <- FindIntegrationAnchors(object.list = LMN_merge.list,
+                                            anchor.features = features)
+
+LMN <- IntegrateData(anchorset = LMN_merge.anchors)
+
+DefaultAssay(LMN) <- "integrated"
+
+LMN <- ScaleData(LMN, verbose = FALSE)
+
+LMN <- RunPCA(LMN, npcs = 50, verbose = FALSE)
+
+LMN <- RunUMAP(LMN, reduction = "pca", dims = 1:30)
+
+LMN <- FindNeighbors(LMN, reduction = "pca", dims = 1:30)
+
+LMN <- FindClusters(LMN, resolution = 0.5)
+
+DefaultAssay(LMN) <- "RNA"
+
+LMN
+
+#Indicates 17083
+
+
+# A visualization for initial assessment of clustering and sample bias
+
+
+DimPlot(LMN, group.by = 'seurat_clusters', split.by = 'orig.ident',
+        label = TRUE, label.size = 5) + NoLegend() # 1500 x 500
+
+
+#Check for any artificially low cell count clusters, then remove and recluster if needed
+
+VlnPlot(LMN, "nFeature_RNA", pt.size = 0) + NoLegend() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5)) +
+  theme(text = element_text(size = 20)) #1500 x 500
+
+VlnPlot(LMN, "Ddit3", pt.size = 0) + NoLegend() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5)) +
+  theme(text = element_text(size = 20)) #1500 x 500
+
+####Based on the above QC metrics, cluster 4 and 11 are removed for displaying high death even in uninjured
+####samples, and clusters 12, 24, and 25 for low feature counts
+
+Idents(LMN) <- "seurat_clusters"
+
+LMN1 <- subset(x = LMN, idents = c("4", "11", "12", "24","25"), invert = TRUE)
+
+#A confidence check visualization to confirm proper removal
+
+DimPlot(LMN1, group.by = 'seurat_clusters', split.by = 'orig.ident', label = TRUE, label.size = 5) + NoLegend()
+
+
+############  Renormalize the new dataset that lacks the dying and low-count clusters cells   ################
+
+DefaultAssay(LMN1) <- "RNA"
+
+LMN1 <- NormalizeData(LMN1, normalization.method = "LogNormalize", scale.factor = 10000)
+
+LMN1 <- FindVariableFeatures(LMN1, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(LMN1)
+
+LMN1 <- ScaleData(LMN1, features = all.genes)
+
+LMN1 <- RunPCA(LMN1, features = VariableFeatures(object = LMN1), npcs = 50)
+
+LMN1 <- FindNeighbors(LMN1, dims = 1:30)
+LMN1 <- FindClusters(LMN1, resolution = 0.5)
+
+LMN1 <- RunUMAP(LMN1, dims = 1:30)
+
+LMN1 
+
+#total object is now 15114
+
+# Various visualizations to decide whether clustering is appropriate
+
+FeaturePlot(LMN1, ("Bcl11b"), 
+            label = TRUE, label.size = 3,
+            repel = FALSE, order = TRUE, ) #500 x 1000
+
+DimPlot(LMN1, group.by = 'seurat_clusters',  label = TRUE, label.size = 5) + NoLegend()
+
+
+### Identify CST and also establish markers to exclude non-
+#CST cortical cells and determine their number
+
+#Strategy is to use pan-cortical markers to determine which clusters are cortical,
+#then use a combination of positive and negative CST markers to identify any 
+#spurious cortical clusters, meaning definitively cortical but not CST
+
+#Pan-cortical markers: Mef2c, Camk2a, Ptk2b, Satb2
+#Positive CST markers: Crym, Fezf2, Bcl6
+#Negative CST markers: Slc30a3 (intracortical), Sulf1 (layer VI)
+
+# A dotplot with the above markers
+
+DotPlot(LMN1, features = c("Mef2c", "Camk2a", "Ptk2b", "Satb2", 
+                           "Crym", "Fezf2", "Bcl6", "Slc30a3", "Sulf1"),
+        dot.scale = 4, dot.min = 0) + coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5),
+        axis.text = element_text(size = 10)) #Sized for display
+
+# A violin and feature plot to spot check and get a different view if needed
+
+VlnPlot(LMN1, "Slc30a3", pt.size = 0) + NoLegend() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5)) +
+  theme(text = element_text(size = 15),
+        axis.text = element_text(size = 15)) #Sized for display
+
+FeaturePlot(LMN1, ("Slc30a3"), 
+            label = TRUE, label.size = 3,
+            repel = FALSE, order = TRUE, ) #500 x 1000
+
+# The conclusion is that clusters 0 and 1 are CST but 12 and 19 are intracortical 
+# non-CST contamination that should be removed. 
+
+#Remove clusters 12 and 19, creating LMN_Final
+
+Idents(LMN1) <- "seurat_clusters"
+levels(LMN1)
+
+LMN_Final <- subset(LMN1, idents = c("12", "19"), invert = TRUE)
+
+#Renormalize and cluster LMN_Final now that cluster 12 and 19 are removed 
+
+DefaultAssay(LMN_Final) <- "RNA"
+
+LMN_Final <- NormalizeData(LMN_Final, normalization.method = "LogNormalize", scale.factor = 10000)
+
+LMN_Final <- FindVariableFeatures(LMN_Final, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(LMN_Final)
+
+LMN_Final <- ScaleData(LMN_Final, features = all.genes)
+
+LMN_Final <- RunPCA(LMN_Final, features = VariableFeatures(object = LMN_Final), npcs = 50)
+
+LMN_Final <- FindNeighbors(LMN_Final, dims = 1:30)
+LMN_Final <- FindClusters(LMN_Final, resolution = 0.5)
+
+LMN_Final <- RunUMAP(LMN_Final, dims = 1:30)
+
+#Check the number of remaining nuclei:
+LMN_Final
+#Indicates 14893
+
+#Recheck for residual cortical-but-non-CST contamination
+
+DotPlot(LMN_Final, features = c("Mef2c", "Camk2a", "Ptk2b", "Satb2", 
+                           "Crym", "Fezf2", "Bcl6", "Slc30a3", "Sulf1"),
+        dot.scale = 4, dot.min = 0) + coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5),
+        axis.text = element_text(size = 10)) #Sized for display
+
+FeaturePlot(LMN_Final, ("Crym"), 
+            label = TRUE, label.size = 3,
+            repel = FALSE, order = TRUE, ) #500 x 1000
+
+#Cluster 15 is cortical but Crym negative, is removed as residual non-CST
+
+LMN_Final <- subset(LMN_Final, idents = c("15"), invert = TRUE)
+
+
+# Now assign identity and order
+
+#Overall the strategy is to read in csv files that contain lists of markers
+#for various supraspinal cell types and then feed those into dotplots
+#or else use them to assign names to seurat clusters and eventually reorder them
+#in a rostral-caudal sequence 
+
+#Read a csv with standard markers, the basis for an initial dotplot
+LMN_Final_DotPlot1 <- read.csv("LMN_Final_DotPlot1.csv", sep = ",")
+
+
+Idents(LMN_Final)  <- "seurat_clusters"
+
+DefaultAssay(LMN_Final) <- "RNA"
+
+DotPlot(LMN_Final, features = LMN_Final_DotPlot1$Marker, dot.scale = 9, dot.min = 0) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5),
+        axis.text = element_text(size = 10)) #Sized for display
+
+
+# The clusters mostly fall neatly into categories with markers.
+# Note that clusters 6 and 7 express Lhx4 and Hox genes and are therefore medullary
+# but lack clear expression of medullary subtypes and are therefore catagorized as 
+# HB - other 
+
+
+#Map seurat_clusters to manual.cluster.1 (anatomical assignments)
+
+LMN_Final_Map1 <- read.csv("Inputs/LMN_Final_Map1_manual_clusters.csv",
+                           sep = ",")
+
+Idents(LMN_Final) <- "seurat_clusters"
+
+levels(LMN_Final)
+
+LMN_Final@meta.data$manual.clusters.1 <- plyr::mapvalues(
+  x = LMN_Final@meta.data$seurat_clusters,
+  from = LMN_Final_Map1$seurat_clusters,
+  to = LMN_Final_Map1$manual.cluster.1)
+
+Idents(LMN_Final) <- "manual.clusters.1"
+
+levels(LMN_Final)
+
+
+#Order Seurat Clusters in a rostral-caudal sequence
+
+LMN_Final@meta.data$seurat_clusters <- factor(
+  x = LMN_Final@meta.data$seurat_clusters,
+  levels = LMN_Final_Map1$seurat_clusters)
+
+Idents(LMN_Final) <- "seurat_clusters"
+levels(LMN_Final)
+
+
+#Order manual.clusters.1 in a rostral-caudal sequence
+
+LMN_Final_Order1 <- read.csv("Inputs/LMN_Final_Order1.csv",
+                             sep = ",")
+
+LMN_Final@meta.data$manual.clusters.1 <- factor(
+  x = LMN_Final@meta.data$manual.clusters.1,
+  levels = LMN_Final_Order1$Order)
+
+Idents(LMN_Final) <- "manual.clusters.1"
+levels(LMN_Final)
+
+
+#Check identities with a confirmation Dotplot that includes additional marker genes
+
+LMN_Final_DotPlot2 <- read.csv("Inputs/LMN_Final_DotPlot2.csv",
+                               sep = ",")
+
+
+DefaultAssay(LMN_Final) <- "RNA"
+
+
+DotPlot(LMN_Final, features = LMN_Final_DotPlot1$Marker, dot.scale = 4, dot.min = 0) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text = element_text(size = 10)) #Sized for display
+
+
+DotPlot(LMN_Final, features = LMN_Final_DotPlot2$Marker, dot.scale = 4, dot.min = 0) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text = element_text(size = 10)) #Sized for display
+
+#Examination of the two dotplots confirms accurate assignment of cell identity
+
+#Add information about injury status to LMN_Final
+
+LMN_Final_Map2 <- read.csv("Inputs/LMN_Final_Map2.csv",
+                           sep = ",")
+
+Idents(LMN_Final) <- "orig.ident"
+levels(LMN_Final)
+
+LMN_Final@meta.data$injury.status <- plyr::mapvalues(
+  x = LMN_Final@meta.data$orig.ident,
+  from = LMN_Final_Map2$orig.ident,
+  to = LMN_Final_Map2$injury.status)
+
+Idents(LMN_Final) <- "injury.status"
+levels(LMN_Final)
+
+#Create cortical versus subcortical category
+#For convenience I added these to the Map1 csv file as a new column
+
+LMN_Final_Map1 <- read.csv("Inputs/LMN_Final_Map1_manual_clusters.csv",
+                           sep = ",")
+
+Idents(LMN_Final) <- "seurat_clusters"
+levels(LMN_Final)
+
+LMN_Final@meta.data$Cort_v_Subcort <- plyr::mapvalues(
+  x = LMN_Final@meta.data$seurat_clusters,
+  from = LMN_Final_Map1$seurat_clusters,
+  to = LMN_Final_Map1$Cort_v_Subcort)
+
+Idents(LMN_Final) <- "Cort_v_Subcort"
+levels(LMN_Final)
+
+#Create a manual.clusters.2, which provides larger groups, for example
+#lateral and paraventricular hypothalamus are now just "HYP" and all the
+#various brainstem clusters just become "MED" for medulla.
+
+Idents(LMN_Final) <- "seurat_clusters"
+levels(LMN_Final)
+
+LMN_Final@meta.data$manual.clusters.2 <- plyr::mapvalues(
+  x = LMN_Final@meta.data$seurat_clusters,
+  from = LMN_Final_Map1$seurat_clusters,
+  to = LMN_Final_Map1$manual.cluster.2)
+
+Idents(LMN_Final) <- "manual.clusters.2"
+levels(LMN_Final)
+
+#Order manual.clusters.2
+
+LMN_Final_Order2 <- read.csv("Inputs/LMN_Final_Order2.csv",
+                             sep = ",")
+
+LMN_Final@meta.data$manual.clusters.2 <- factor(
+  x = LMN_Final@meta.data$manual.clusters.2,
+  levels = LMN_Final_Order2$Order)
+
+Idents(LMN_Final) <- "manual.clusters.2"
+levels(LMN_Final)
+
+
+##########################################################################
+# IDENTIFY DEGS
+##########################################################################
+
+#Joinlayers, a new requirement in Seurat v5.0
+LMN_Final[["RNA"]] <- JoinLayers(LMN_Final[["RNA"]])
+
+
+# CST injury-responsive transcripts
+
+Idents(LMN_Final) <- "injury.status"
+levels(LMN_Final)
+
+Idents(LMN_Final) <- "manual.clusters.2"
+levels(LMN_Final)
+
+LMN_CST_InjVUninj <- FindMarkers(LMN_Final,
+                                 subset.ident = "CST",
+                                 group.by = "injury.status",
+                                 ident.1 = "injured",
+                                 ident.2 = "uninjured",
+                                 logfc.threshold = 0,
+                                 min.pct = .001)
+
+
+write.csv(x = LMN_CST_InjVUninj, 
+          file = "Outputs/LMN_CST_InjvUninj.csv",
+          quote = FALSE)
+
+
+LMN_HYP_InjVUninj <- FindMarkers(LMN_Final,
+                                 subset.ident = "HYP",
+                                 group.by = "injury.status",
+                                 ident.1 = "injured",
+                                 ident.2 = "uninjured",
+                                 logfc.threshold = 0,
+                                 min.pct = 0.001)
+
+
+write.csv(x = LMN_HYP_InjVUninj, 
+          file = "Outputs/LMN_HYP_InjvUninj.csv",
+          quote = FALSE)
+
+LMN_RN_InjVUninj <- FindMarkers(LMN_Final,
+                                 subset.ident = "RN",
+                                 group.by = "injury.status",
+                                 ident.1 = "injured",
+                                 ident.2 = "uninjured",
+                                 logfc.threshold = 0,
+                                 min.pct = 0.001)
+
+
+write.csv(x = LMN_RN_InjVUninj, 
+          file = "Outputs/LMN_RN_InjvUninj.csv",
+          quote = FALSE)
+
+
+LMN_DP_InjVUninj <- FindMarkers(LMN_Final,
+                                subset.ident = "DP",
+                                group.by = "injury.status",
+                                ident.1 = "injured",
+                                ident.2 = "uninjured",
+                                logfc.threshold = 0,
+                                min.pct = 0.001)
+
+
+write.csv(x = LMN_DP_InjVUninj, 
+          file = "Outputs/LMN_DP_InjvUninj.csv",
+          quote = FALSE)
+
+LMN_MED_InjVUninj <- FindMarkers(LMN_Final,
+                                subset.ident = "MED",
+                                group.by = "injury.status",
+                                ident.1 = "injured",
+                                ident.2 = "uninjured",
+                                logfc.threshold = 0,
+                                min.pct = 0.001)
+
+
+write.csv(x = LMN_MED_InjVUninj, 
+          file = "Outputs/LMN_MED_InjvUninj.csv",
+          quote = FALSE)
+
+
+
+
+LMN_ALL_InjVUninj <- FindMarkers(LMN_Final,
+                                 group.by = "injury.status",
+                                 ident.1 = "injured",
+                                 ident.2 = "uninjured",
+                                 logfc.threshold = 0,
+                                 min.pct = 0.001)
+
+
+write.csv(x = LMN_ALL_InjVUninj, 
+          file = "Outputs/LMN_ALL_InjvUninj.csv",
+          quote = FALSE)
+
+#Average Expression File
+
+DefaultAssay(LMN_Final) <- "RNA"
+
+avgexp_LMN_Final <- AverageExpression(LMN_Final, assay = 'RNA', 
+                                     features = rownames(LMN_Final@assays$RNA$counts),
+                                     group.by = c('injury.status'))
+
+write.csv(x = avgexp_LMN_Final, 
+          file = "Outputs/avgexp_thoracic_merge.csv",
+          quote = FALSE)
+
+
+
+######Final Save
+saveRDS (LMN_Final, "LMN_Final.rds")
+
+# Reload if needed
+LMN_Final <- readRDS("LMN_Final.rds")
