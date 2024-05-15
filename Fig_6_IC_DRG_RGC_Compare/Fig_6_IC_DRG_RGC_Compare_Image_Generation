@@ -1,0 +1,90 @@
+#Load required libraries
+library('Seurat')
+library('ggplot2')
+library('plyr')
+library('dplyr')
+library('viridis')
+library('scCustomize')
+library('ggthemes')
+library('plotly')
+library('cowplot')
+library('ggrepel')
+library(ComplexHeatmap)
+library(circlize)
+library(reshape2)
+
+
+#Generate Figure 6A - Venn Diagram
+
+library(eulerr)
+
+#specify values to use in venn diagram
+fit <- euler(c('DRG' = 1825,
+               'RGC' = 600,
+               'IC-CST' = 2285,
+               'IC-CST&RGC' = 329,
+               'IC-CST&DRG'=569,
+               'DRG&RGC' = 320,
+               "IC-CST&DRG&RGC" = 145))
+
+#create venn diagram with custom colors
+
+venn = plot(fit, fill=c('#FF8080', '#80FF80',"#8080FF"),quantities = TRUE) 
+
+grid.draw(venn)
+png("venn_diagram.png",width = 4,height = 4,units = "in",res = 300)  # Start PNG device
+grid.draw(venn)     # Draw the plot on the PNG device
+dev.off()
+
+Venn
+ggsave("Fig_6A_Venn.png",height = 4,width = 4,dpi = 300,units = "in")
+
+
+#Generate Figure 6c - Heatmap
+
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_6_Venn/Figure_Panels")
+
+# Read heatmap data from CSV
+data <- read.csv("Fig_6_Venn_heatmap.csv")
+
+#remove the first column
+df=data[,-1]
+data_matrix=data.matrix(df)
+
+
+row.names(data_matrix)=data$X
+png("heatmap_2.png",width = 4, height = 8, units = "in", bg = "white", res = 300)
+my_col_fun <- colorRamp2(c(-7, 0, 7), c("red", "white", "darkgreen"))
+
+# List of genes to mark
+genes_to_mark <- c("Jun", "Atf3", "Sox11", "Stat3","Smad1",
+                   "Sprr1a", "Klf6", "Ezr","Msn","Phgdh","Hrk","Casp3")
+
+# Create a logical vector for marking genes
+mark_genes <- row.names(data_matrix) %in% genes_to_mark
+
+# Create row annotation based on marked genes
+gene_annotation <- rowAnnotation(mark = anno_mark(at = which(mark_genes), labels = row.names(data_matrix)[mark_genes], which = "row"))
+
+#split = data$ROW_SPLIT_2
+split = factor(data$ROW_SPLIT_2, levels=c("1","2","3","4","5","Other"))
+split
+#split = as.factor(data$ROW_SPLIT_2)
+
+
+H1=Heatmap(data_matrix[,1:5], 
+           col = my_col_fun, 
+           border = TRUE, 
+           show_row_names = FALSE, 
+           name = "foldchange", 
+           cluster_rows = TRUE, 
+           cluster_columns = FALSE,
+           #row_split = data$ROW_SPLIT_2,
+           row_split = split,
+           cluster_row_slices = F,
+           right_annotation = gene_annotation)
+H1
+png("Fig_6_heatmap4.png",width = 3.5, height = 8, units = "in", bg = "white", res = 300)
+H1
+dev.off()
+H1
