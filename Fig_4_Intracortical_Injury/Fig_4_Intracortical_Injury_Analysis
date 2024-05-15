@@ -1,0 +1,791 @@
+
+#This script inputs single nuclei data from CST neurons, some of which received intracortical
+#injury and some of which did not. Barcoding is as follows:
+
+#IC_1d: Uninjured = BC0, Intracortical 1 dpi = no barcode
+#IC_3d: Intracortical 3dpi, mGl only = BC0, BC1. Intracortical 3dpi TF treatment = BC6, BC7 (removed)
+#IC_7d: Uninjured = BC0, Intracortical 7dpi = BC1
+
+# Load libraries
+library('Seurat')
+library('ggplot2')
+library('dplyr')
+
+#set working directory (will vary by the user)
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_4_Intracortical_1")
+
+##########################################################################################################
+# INPUT 1 DAY POST-INJURY DATASET (IC_1d_1), PERFORM QC, AND IDENTIFY INJURED 
+# NUCLEI VIA BARCODES
+##########################################################################################################
+
+
+#Step 1: Input data and remove high- and low-count nuclei
+
+IC_1d_1.data <- Read10X(data.dir = "SourceFiles/IC_1d_1")
+IC_1d_1 <- CreateSeuratObject(counts = IC_1d_1.data, project = "IC_1d_1", 
+                              min.cells = 3, min.features = 1000)
+IC_1d_1
+
+# Initially 2330
+
+VlnPlot(IC_1d_1, features = c("nFeature_RNA"))
+IC_1d_1 <- subset(IC_1d_1, subset = nFeature_RNA > 1000 & nFeature_RNA < 8000)
+IC_1d_1
+
+# 2328 remain
+
+#Cluster
+
+IC_1d_1 <- NormalizeData(IC_1d_1, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_1d_1 <- FindVariableFeatures(IC_1d_1, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_1d_1)
+
+IC_1d_1 <- ScaleData(IC_1d_1, features = all.genes)
+
+IC_1d_1 <- RunPCA(IC_1d_1, features = VariableFeatures(object = IC_1d_1), npcs = 100)
+
+IC_1d_1 <- FindNeighbors(IC_1d_1, dims = 1:30)
+
+IC_1d_1 <- FindClusters(IC_1d_1, resolution = 0.5)
+
+IC_1d_1 <- RunUMAP(IC_1d_1, dims = 1:30)
+
+DimPlot(IC_1d_1, reduction = "umap", label = TRUE, pt.size = 1, label.size = 10
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+
+#Check for any artificially low cell count clusters, then remove and recluster if needed
+
+VlnPlot(IC_1d_1, "nFeature_RNA", pt.size = 0) + NoLegend() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5)) +
+  theme(text = element_text(size = 20)) #1500 x 500
+
+
+#None are removed
+
+
+### Identify CST and also establish markers to exclude non-
+#CST cortical cells and determine their number
+
+#Strategy is to use pan-cortical markers to determine which clusters are cortical,
+#then use a combination of positive and negative CST markers to identify any 
+#spurious cortical clusters, meaning definitively cortical but not CST
+
+#Pan-cortical markers: Mef2c, Camk2a, Ptk2b, Satb2
+#Positive CST markers: Crym, Fezf2, Bcl6
+#Negative CST markers: Slc30a3 (intracortical), Sulf1 (layer VI)
+
+# A dotplot with the above markers
+
+DotPlot(IC_1d_1, features = c("Mef2c", "Camk2a", "Ptk2b", "Satb2", 
+                              "Crym", "Fezf2", "Bcl6", "Slc30a3", "Sulf1",
+                              "Bcl11b","Cux2","Dcc","Unc5d"),
+        dot.scale = 4, dot.min = 0) + coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5),
+        axis.text = element_text(size = 10)) #Sized for display
+
+#Cluster 7 lacks Crym and Fezf2 and has off-layer markers and so is removed
+
+IC_1d_1 <- subset(IC_1d_1, idents = c("7"), invert = TRUE)
+
+#Recluster
+
+IC_1d_1 <- NormalizeData(IC_1d_1, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_1d_1 <- FindVariableFeatures(IC_1d_1, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_1d_1)
+
+IC_1d_1 <- ScaleData(IC_1d_1, features = all.genes)
+
+IC_1d_1 <- RunPCA(IC_1d_1, features = VariableFeatures(object = IC_1d_1), npcs = 100)
+
+IC_1d_1 <- FindNeighbors(IC_1d_1, dims = 1:30)
+
+IC_1d_1 <- FindClusters(IC_1d_1, resolution = 0.5)
+
+IC_1d_1 <- RunUMAP(IC_1d_1, dims = 1:30)
+
+DimPlot(IC_1d_1, reduction = "umap", label = TRUE, pt.size = 1, label.size = 10, group.by = "seurat_clusters",
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+#Detect Barcode sequences
+
+#create an average expression file, mostly to verifiy the exact barcode names
+# but also to get a sense of barcode distribution across seurat clusters.
+
+DefaultAssay(IC_1d_1) <- "RNA"
+
+avgexp_IC_1d_1 <- AverageExpression(IC_1d_1, assay = 'RNA', 
+                                    features = rownames(IC_1d_1@assays$layers@counts),
+                                    group.by = c('seurat_clusters'))
+
+
+write.csv(x = avgexp_IC_1d_1, 
+          file = "Outputs/avgexp_IC_1d_1.csv",
+          quote = FALSE)
+
+
+#Examination of the file indicates "BC0" is abundant in 0,1,4
+#Step 2: 
+
+#Determine the percent of total reads that originate from the barcode sequence. 
+
+PercentageFeatureSet(IC_1d_1,pattern="BC0") -> IC_1d_1$percent.BC0
+
+
+write.csv(x = IC_1d_1@meta.data,
+          file = "Outputs/IC_1d_1_MD.csv",
+          quote = FALSE)
+
+
+#In excel, 1) add a column named "injury.status" that indicates "Uninjured" or "IC_1d" according to barcode
+#and 2)place "CellID" as the column header for the cell identifications
+#Save the result in 2_Input_Files with an "_back" added (save as .csv)
+
+#The following commands read the csv file back into R, indicate the column that contains the 
+#cell identifier, and the inputs the data from the uploaded file into metadata.
+
+IC_1d_1_injury.status <- read.csv("Inputs/IC_1d_1_MD_back.csv",
+                                  sep = ",")
+
+rownames(IC_1d_1_injury.status) <- IC_1d_1_injury.status$CellID
+
+IC_1d_1 <- AddMetaData(object = IC_1d_1, metadata = IC_1d_1_injury.status)
+
+#Check that it all worked:
+Idents (IC_1d_1) <- "injury.status"
+levels (IC_1d_1)
+
+
+#If desired, create gene list of DEGs between Injured and Uninjured (this is 
+#an optional check - the final version of DEGs will derive later from the unified file created below)
+
+IC_1d_1_Inj_vs_not <- FindMarkers(IC_1d_1,
+                                  ident.1 = c("IC_1d"),
+                                  ident.2 = c("Uninjured"),
+                                  logfc.threshold = 0,
+                                  min.pct = 0.001)
+
+
+write.csv(x = IC_1d_1_Inj_vs_not,
+          file = "IC_1d_1_Inj_vs_not.csv",
+          quote = FALSE)
+
+
+#If desired, visualize candidate DEGs (again, final versions will be from the unified file)
+
+FeaturePlot(IC_1d_1, c("Etv1"), label = FALSE, pt.size = 1, split.by = "injury.status",
+            label.size = 5, repel = TRUE, order = TRUE, min.cutoff = 0,
+            max.cutoff = 6, cols = c("lightgrey", "red")) +
+  theme(text = element_text(size = 25),
+        axis.text = element_text(size = 40)) +
+  NoLegend() + NoAxes() #300 x 3000
+
+
+VlnPlot(IC_1d_1, "Creb5", pt.size = .1) + NoLegend() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5)) +
+  theme(text = element_text(size = 20)) #1500 x 500
+
+
+# Save or open RDS files (optional if starting from this point)
+#saveRDS(IC_1d_1, "IC_1d_1.rds")
+#IC_1d_1 <- readRDS("IC_1d_1.rds")
+
+
+
+#####################################################################
+#Input 3 day intracortical injury data. Note that some nuclei received
+#a transcription factor treatment and these are removed using associated
+#barcodes. BC0 and BC1 are injured mGl-only animals, BC6 and BC7 were
+#treated with TFs and are removed
+#####################################################################
+
+#Input data
+
+IC_3d_all.data <- Read10X(data.dir = "SourceFiles/IC_3d_1")
+IC_3d_all <- CreateSeuratObject(counts = IC_3d_all.data, project = "IC_3d_all", 
+                                min.cells = 3, min.features = 1000)
+IC_3d_all
+
+# Initially 3262
+
+VlnPlot(IC_3d_all, features = c("nFeature_RNA"))
+IC_3d_all <- subset(IC_3d_all, subset = nFeature_RNA > 1000 & nFeature_RNA < 8000)
+IC_3d_all
+
+# Now 3235
+
+
+#Cluster IC_3d_all
+
+IC_3d_all <- NormalizeData(IC_3d_all, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_3d_all <- FindVariableFeatures(IC_3d_all, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_3d_all)
+
+IC_3d_all <- ScaleData(IC_3d_all, features = all.genes)
+
+IC_3d_all <- RunPCA(IC_3d_all, features = VariableFeatures(object = IC_3d_all), npcs = 100)
+
+IC_3d_all <- FindNeighbors(IC_3d_all, dims = 1:30)
+
+IC_3d_all <- FindClusters(IC_3d_all, resolution = 0.5)
+
+IC_3d_all <- RunUMAP(IC_3d_all, dims = 1:30)
+
+DimPlot(IC_3d_all, reduction = "umap", label = TRUE, pt.size = 1, label.size = 10
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+
+#Check for any artificially low cell count clusters, then remove and recluster if needed
+
+VlnPlot(IC_3d_all, "nFeature_RNA", pt.size = 0) + NoLegend() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5)) +
+  theme(text = element_text(size = 20)) #1500 x 500
+
+#8 and 11 have feature counts less than 1/3 of the overall average and are removed
+IC_3d_all <- subset(IC_3d_all, idents = c("8","11"), invert = TRUE)
+
+#recluster
+
+IC_3d_all <- NormalizeData(IC_3d_all, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_3d_all <- FindVariableFeatures(IC_3d_all, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_3d_all)
+
+IC_3d_all <- ScaleData(IC_3d_all, features = all.genes)
+
+IC_3d_all <- RunPCA(IC_3d_all, features = VariableFeatures(object = IC_3d_all), npcs = 100)
+
+IC_3d_all <- FindNeighbors(IC_3d_all, dims = 1:30)
+
+IC_3d_all <- FindClusters(IC_3d_all, resolution = 0.5)
+
+IC_3d_all <- RunUMAP(IC_3d_all, dims = 1:30)
+
+DimPlot(IC_3d_all, reduction = "umap", label = TRUE, pt.size = 1, label.size = 10
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+
+### Identify CST and also establish markers to exclude non-
+#CST cortical cells and determine their number
+
+#Strategy is to use pan-cortical markers to determine which clusters are cortical,
+#then use a combination of positive and negative CST markers to identify any 
+#spurious cortical clusters, meaning definitively cortical but not CST
+
+#Pan-cortical markers: Mef2c, Camk2a, Ptk2b, Satb2
+#Positive CST markers: Crym, Fezf2, Bcl6
+#Negative CST markers: Slc30a3 (intracortical), Sulf1 (layer VI)
+#Upper layer markers: Cux2, Unc5d
+#Layer V but non-CST markers: Vwc2l, Dcc
+
+# A dotplot with the above markers
+
+DotPlot(IC_3d_all, features = c("Mef2c", "Camk2a", "Ptk2b", "Satb2", 
+                                "Crym", "Fezf2", "Bcl6", "Slc30a3", "Sulf1",
+                                "Cux2","Unc5d","Vwc2l","Dcc"),
+        dot.scale = 4, dot.min = 0) + coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5),
+        axis.text = element_text(size = 10)) #Sized for display
+
+#7 and #4 are removed because it lacks Crym and has non-layer V markers
+
+IC_3d_all <- subset(IC_3d_all, idents = c("7","4"), invert = TRUE)
+
+#Recluster
+
+IC_3d_all <- NormalizeData(IC_3d_all, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_3d_all <- FindVariableFeatures(IC_3d_all, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_3d_all)
+
+IC_3d_all <- ScaleData(IC_3d_all, features = all.genes)
+
+IC_3d_all <- RunPCA(IC_3d_all, features = VariableFeatures(object = IC_3d_all), npcs = 100)
+
+IC_3d_all <- FindNeighbors(IC_3d_all, dims = 1:10)
+
+IC_3d_all <- FindClusters(IC_3d_all, resolution = 0.5)
+
+IC_3d_all <- RunUMAP(IC_3d_all, dims = 1:10)
+
+Idents(IC_3d_all) <- "seurat_clusters"
+
+#Visualizations to check clustering and distribution of barcodes
+DimPlot(IC_3d_all, reduction = "umap", label = TRUE, pt.size = 1, label.size = 10
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+
+FeaturePlot(IC_3d_all, c("80BC1"), label = FALSE, pt.size = 2,
+            label.size = 5, repel = TRUE, order = TRUE, min.cutoff = 0,
+            max.cutoff = 6, cols = c("lightgrey", "red")) +
+  theme(text = element_text(size = 25),
+        axis.text = element_text(size = 40)) +
+  NoLegend() + NoAxes() #300 x 3000
+
+
+#create an average expression file, mostly to verify the exact barcode names
+# but also to get a sense of barcode distribution across seurat clusters.
+
+DefaultAssay(IC_3d_all) <- "RNA"
+
+avgexp_IC_3d_all <- AverageExpression(IC_3d_all, assay = 'RNA', 
+                                      features = rownames(IC_3d_all@assays$RNA@counts),
+                                      group.by = c('seurat_clusters'))
+
+
+write.csv(x = avgexp_IC_3d_all, 
+          file = "avgexp_IC_3d_all.csv",
+          quote = FALSE)
+
+
+#Find percent of total reads that come from each barcode. 
+
+PercentageFeatureSet(IC_3d_all,pattern="80BC0") -> IC_3d_all$percent.BC0
+PercentageFeatureSet(IC_3d_all,pattern="80BC1") -> IC_3d_all$percent.BC1
+PercentageFeatureSet(IC_3d_all,pattern="80BC6") -> IC_3d_all$percent.BC6
+PercentageFeatureSet(IC_3d_all,pattern="80BC7") -> IC_3d_all$percent.BC7
+
+
+###Assign injury status to the dataset
+write.csv(x = IC_3d_all@meta.data,
+          file = "IC_3d_all_MD.csv",
+          quote = FALSE)
+
+
+
+
+#In excel, 1) add a column named "injury.status" that indicates "IC_3d",
+#2)place "CellID" as the column header for the cell identifications
+#3)based on barcode detection, identify cells that are untreated, control cells (have
+#only barcodes 0 or 1)
+#Save the result in 2_Input_Files with an "_back" added (save as .csv of course)
+
+#The rule applied for barcoding was conservative: because BC0 and BC1 are associated with
+#mGl-only animals and BC6 and BC7 with TF-treated, a nuclei must have absolute 0 detection of 
+#BC6 or BC7 and detection of BC0 or BC1 to be included.
+
+
+#The following commands read the csv file back into R, indicate the column that contains the 
+#cell identifier, and the inputs the data from the uploaded file into metadata.
+
+IC_3d_all_injury.status <- read.csv("Inputs/IC_3d_all_MD_back.csv",
+                                    sep = ",")
+rownames(IC_3d_all_injury.status) <- IC_3d_all_injury.status$CellID
+
+IC_3d_all <- AddMetaData(object = IC_3d_all, metadata = IC_3d_all_injury.status)
+
+#Check that it all worked:
+Idents (IC_3d_all) <- "injury.status"
+levels (IC_3d_all)
+
+Idents (IC_3d_all) <- "Classification"
+levels (IC_3d_all)
+
+#Extact control-treated cells from the overall datasets
+IC_3d_1 <- subset(IC_3d_all, idents = c("BC0_1"), invert = FALSE)
+
+Idents (IC_3d_1) <- "Classification"
+levels(IC_3d_1)
+
+IC_3d_1
+#742 nuclei remain
+
+#Recluster the final set and check for non-CST cell types
+
+IC_3d_1 <- NormalizeData(IC_3d_1, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_3d_1 <- FindVariableFeatures(IC_3d_1, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_3d_1)
+
+IC_3d_1 <- ScaleData(IC_3d_1, features = all.genes)
+
+IC_3d_1 <- RunPCA(IC_3d_1, features = VariableFeatures(object = IC_3d_1), npcs = 100)
+
+IC_3d_1 <- FindNeighbors(IC_3d_1, dims = 1:30)
+
+IC_3d_1 <- FindClusters(IC_3d_1, resolution = 0.5)
+
+IC_3d_1 <- RunUMAP(IC_3d_1, dims = 1:30)
+
+#Visualization to check clustering and a final dotplot to confirm CST identity
+
+DimPlot(IC_3d_1, reduction = "umap", label = TRUE, pt.size = 1, label.size = 10
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+DotPlot(IC_3d_1, features = c("Mef2c", "Camk2a", "Ptk2b", "Satb2", 
+                              "Crym", "Fezf2", "Bcl6", "Slc30a3", "Sulf1",
+                              "Cux2","Unc5d","Vwc2l","Dcc","Atf3","Ecel1"),
+        dot.scale = 4, dot.min = 0) + coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5),
+        axis.text = element_text(size = 10)) #Sized for display
+
+
+# Save RDS files and open if needed at this point
+#saveRDS(IC_3d_1, "IC_3d_1.rds")
+#IC_3d_1 <- readRDS("IC_1d_3.rds")
+
+
+
+##########################################################################################
+#7 day intracortical data. Uninjured and injured nuclei were pre-labeled
+#with molecular barcodes and mixed prior to library construction. Barcodes
+#are used here to de-multiplex
+##########################################################################################
+
+IC_7d_1.data <- Read10X(data.dir = "SourceFiles/IC_7d_1")
+IC_7d_1 <- CreateSeuratObject(counts = IC_7d_1.data, project = "IC_7d_1", 
+                              min.cells = 3, min.features = 1000)
+IC_7d_1
+
+# Initially 2173
+VlnPlot(IC_7d_1, features = c("nFeature_RNA"))
+IC_7d_1 <- subset(IC_7d_1, subset = nFeature_RNA > 1000 & nFeature_RNA < 8000)
+IC_7d_1
+
+# Still 2173
+
+#Cluster
+
+IC_7d_1 <- NormalizeData(IC_7d_1, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_7d_1 <- FindVariableFeatures(IC_7d_1, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_7d_1)
+
+IC_7d_1 <- ScaleData(IC_7d_1, features = all.genes)
+
+IC_7d_1 <- RunPCA(IC_7d_1, features = VariableFeatures(object = IC_7d_1), npcs = 100)
+
+IC_7d_1 <- FindNeighbors(IC_7d_1, dims = 1:30)
+
+IC_7d_1 <- FindClusters(IC_7d_1, resolution = 0.5)
+
+IC_7d_1 <- RunUMAP(IC_7d_1, dims = 1:30)
+
+DimPlot(IC_7d_1, reduction = "umap", label = TRUE, pt.size = 1, label.size = 10
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+#Check for any artificially low cell count clusters, then remove and recluster if needed
+
+VlnPlot(IC_7d_1, "nFeature_RNA", pt.size = 0) + NoLegend() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5)) +
+  theme(text = element_text(size = 20)) #1500 x 500
+
+
+#None are removed
+
+### Identify CST and also establish markers to exclude non-
+#CST cortical cells and determine their number
+
+#Strategy is to use pan-cortical markers to determine which clusters are cortical,
+#then use a combination of positive and negative CST markers to identify any 
+#spurious cortical clusters, meaning definitively cortical but not CST
+
+#Pan-cortical markers: Mef2c, Camk2a, Ptk2b, Satb2
+#Positive CST markers: Crym, Fezf2, Bcl6
+#Negative CST markers: Slc30a3 (intracortical), Sulf1 (layer VI)
+
+# A dotplot with the above markers
+
+DotPlot(IC_7d_1, features = c("Mef2c", "Camk2a", "Ptk2b", "Satb2", 
+                              "Crym", "Fezf2", "Bcl6", "Slc30a3", "Sulf1",
+                              "Bcl11b","Cux2","Unc5d"),
+        dot.scale = 4, dot.min = 0) + coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5),
+        axis.text = element_text(size = 10)) #Sized for display
+
+#Clusters 5 and 6 lack Crym and appear to be shallow layer
+
+IC_7d_1 <- subset(IC_7d_1, idents = c("5","6"), invert = TRUE)
+
+#Recluster
+
+IC_7d_1 <- NormalizeData(IC_7d_1, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_7d_1 <- FindVariableFeatures(IC_7d_1, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_7d_1)
+
+IC_7d_1 <- ScaleData(IC_7d_1, features = all.genes)
+
+IC_7d_1 <- RunPCA(IC_7d_1, features = VariableFeatures(object = IC_7d_1), npcs = 100)
+
+IC_7d_1 <- FindNeighbors(IC_7d_1, dims = 1:30)
+
+IC_7d_1 <- FindClusters(IC_7d_1, resolution = 0.5)
+
+IC_7d_1 <- RunUMAP(IC_7d_1, dims = 1:30)
+
+DimPlot(IC_7d_1, reduction = "umap", label = TRUE, pt.size = 1, label.size = 10
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+#Detect Barcode sequences
+
+#Determine the percent of total reads that come from an given gene. 
+
+PercentageFeatureSet(IC_7d_1,pattern="BC0F70") -> IC_7d_1$percent.BC0
+PercentageFeatureSet(IC_7d_1,pattern="BC1F70") -> IC_7d_1$percent.BC1
+
+
+write.csv(x = IC_7d_1@meta.data,
+          file = "IC_7d_1_MD.csv",
+          quote = FALSE)
+
+
+#In excel, 1) add a column named "injury.status" that indicates "Uninjured" of "IC_7d_1" according to barcode
+#and 2)place "CellID" as the column header for the cell identifications
+#Save the result in 2_Input_Files with an "_back" added (save as .csv of course)
+
+
+#The following commands read the csv file back into R, indicate the column that contains the 
+#cell identifier, and the inputs the data from the uploaded file into metadata.
+
+IC_7d_1_injury.status <- read.csv("Inputs/Ic_7d_1_MD_back.csv",
+                                  sep = ",")
+
+rownames(IC_7d_1_injury.status) <- IC_7d_1_injury.status$CellID
+
+
+IC_7d_1 <- AddMetaData(object = IC_7d_1, metadata = IC_7d_1_injury.status)
+
+#Check that it all worked:
+Idents (IC_7d_1) <- "injury.status"
+levels (IC_7d_1)
+
+
+DimPlot(IC_7d_1, reduction = "umap", label = TRUE, pt.size = 1,
+        label.size = 10, group.by = "injury.status"
+) + NoLegend() +
+  theme(axis.text = element_text(size = 20),
+        text = element_text (size = 20)) #2880 x 1500
+
+#If desired, create gene list of DEGs between Injured and Not_Injured (the final version
+#of DEGs will derive later from the unified file)
+
+IC_7d_1_Inj_vs_not <- FindMarkers(IC_7d_1,
+                                  ident.1 = c("IC_7d"),
+                                  ident.2 = c("Uninjured"),
+                                  logfc.threshold = 0,
+                                  min.pct = 0.01)
+
+
+write.csv(x = IC_7d_1_Inj_vs_not,
+          file = "C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/Fig_3_Intracortical_Injury/3_Output_Lists/IC_7d_1_Inj_vs_not_S5.csv",
+          quote = FALSE)
+
+# Save RDS files
+saveRDS(IC_7d_1, "IC_7d_1.rds")
+IC_7d_1 <- readRDS("IC_7d_1.rds")
+
+
+###############################################################################
+# MERGE, VISUALIZE, and IDENTIFY DEGs
+###############################################################################
+
+#Input files (in case you are starting from this point)
+
+IC_1d_1 <- readRDS("IC_1d_1.rds")
+IC_3d_1 <- readRDS("IC_3d_1.rds")
+IC_7d_1 <- readRDS("IC_7d_1.rds")
+
+
+############# Merge Data #####################
+
+IC_merge.list <- list (IC_1d_1,IC_7d_1, IC_3d_1)
+
+IC_merge.list <- lapply(X=IC_merge.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+features <- SelectIntegrationFeatures(object.list = IC_merge.list)
+
+IC_merge.anchors <- FindIntegrationAnchors(object.list = IC_merge.list,
+                                           anchor.features = features)
+
+IC_merge <- IntegrateData(anchorset = IC_merge.anchors)
+
+DefaultAssay(IC_merge) <- "integrated"
+
+IC_merge <- ScaleData(IC_merge, verbose = FALSE)
+
+IC_merge <- RunPCA(IC_merge, npcs = 50, verbose = FALSE)
+
+IC_merge <- RunUMAP(IC_merge, reduction = "pca", dims = 1:30)
+
+IC_merge <- FindNeighbors(IC_merge, reduction = "pca", dims = 1:30)
+
+IC_merge <- FindClusters(IC_merge, resolution = 0.5)
+
+DefaultAssay(IC_merge) <- "RNA"
+
+IC_merge
+
+#Indicates 5093
+
+# Some visualizations for initial assessment of clustering and sample bias
+
+
+DimPlot(IC_merge, group.by = 'seurat_clusters', split.by = 'orig.ident',
+        label = TRUE, label.size = 5) + NoLegend() # 1500 x 500
+
+DimPlot(IC_merge, group.by = 'seurat_clusters', split.by = 'injury.status',
+        label = TRUE, label.size = 5) + NoLegend() # 1500 x 500
+
+
+# Remove artificially low cell count clusters, then recluster
+
+VlnPlot(IC_merge, "nFeature_RNA", pt.size = 0) + NoLegend() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5)) +
+  theme(text = element_text(size = 20)) #1500 x 500
+
+FeaturePlot(IC_merge, c("Sox11"), label = TRUE, split.by = "orig.ident",
+            label.size = 5, repel = TRUE, order = TRUE) #500 x 500
+
+FeaturePlot(IC_merge, c("Creb5"), label = TRUE,
+            label.size = 5, repel = TRUE, order = TRUE) #500 x 500
+
+####Cluster 3 has markedly lower feature counts and is removed
+
+IC_merge <- subset(x = IC_merge, idents = c("3"), invert = TRUE)
+
+#Recluster
+
+DefaultAssay(IC_merge) <- "RNA"
+
+IC_merge <- NormalizeData(IC_merge, normalization.method = "LogNormalize", scale.factor = 10000)
+
+IC_merge <- FindVariableFeatures(IC_merge, selection.method = "vst", nfeatures = 2000)
+
+all.genes <- rownames(IC_merge)
+
+IC_merge <- ScaleData(IC_merge, features = all.genes)
+
+IC_merge <- RunPCA(IC_merge, features = VariableFeatures(object = IC_merge), npcs = 50)
+
+IC_merge <- FindNeighbors(IC_merge, dims = 1:30)
+IC_merge <- FindClusters(IC_merge, resolution = 0.5)
+
+IC_merge <- RunUMAP(IC_merge, dims = 1:30)
+
+DimPlot(IC_merge, group.by = 'seurat_clusters', split.by = 'orig.ident',
+        label = TRUE, label.size = 5) + NoLegend() # 1500 x 500
+
+DimPlot(IC_merge, group.by = 'seurat_clusters',
+        label = TRUE, label.size = 5) + NoLegend() # 1500 x 500
+
+DimPlot(IC_merge, group.by = 'injury.status',
+        label = TRUE, label.size = 5) + NoLegend() # 1500 x 500
+
+#re-confirm CST identity
+
+DotPlot(IC_merge, features = c("Mef2c", "Camk2a", "Ptk2b", "Satb2", 
+                               "Crym", "Fezf2", "Bcl6", "Slc30a3", "Sulf1",
+                               "Cux2","Unc5d","Vwc2l","Dcc"),
+        dot.scale = 4, dot.min = 0) + coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, hjust = .5),
+        axis.text = element_text(size = 10)) #Sized for display
+
+#All clusters appear to be CST
+
+
+IC_merge 
+#Indicates 4766 nuclei in the dataset
+
+#Save final rds
+saveRDS(IC_merge, "IC_merge.rds")
+
+
+############################################################################
+#FIND DEGS
+############################################################################
+
+#Re-open if starting from this point
+IC_merge <- readRDS("IC_merge.rds")
+
+# A JoinLayers command, which is now required in Seurat v5
+IC_merge[["RNA"]] <- JoinLayers(IC_merge[["RNA"]])
+
+Idents(IC_merge) <- "injury.status"
+levels(IC_merge)
+
+
+
+IC_merge_IC_1d <- FindMarkers(IC_merge,
+                              ident.1 = c("IC_1d"),
+                              ident.2 = c("Uninjured"),
+                              logfc.threshold = 0,
+                              min.pct = 0.001)
+
+write.csv(x = IC_merge_IC_1d,
+          file = "Outputs/IC_merge_IC_1d.csv",
+          quote = FALSE)
+
+IC_merge_IC_3d <- FindMarkers(IC_merge,
+                              ident.1 = c("IC_3d"),
+                              ident.2 = c("Uninjured"),
+                              logfc.threshold = 0,
+                              min.pct = 0.001)
+
+write.csv(x = IC_merge_IC_3d,
+          file = "IC_merge_IC_3d.csv",
+          quote = FALSE)
+
+IC_merge_IC_7d <- FindMarkers(IC_merge,
+                              ident.1 = c("IC_7d"),
+                              ident.2 = c("Uninjured"),
+                              logfc.threshold = 0,
+                              min.pct = 0.001)
+
+write.csv(x = IC_merge_IC_7d,
+          file = "Outputs/IC_merge_IC_7d.csv",
+          quote = FALSE)
+
+
+#Generate average values (to create background list of detectable genes)
+
+DefaultAssay(IC_merge) <- "RNA"
+
+avgexp_IC_merge <- AverageExpression(IC_merge, assay = 'RNA', 
+                                      features = rownames(IC_merge@assays$RNA@counts),
+                                      group.by = c('injury.status'))
+
+
+write.csv(x = avgexp_IC_merge, 
+          file = "Outputs/avgexp_IC_merge.csv",
+          quote = FALSE)
+
+
+#Final save or open if needed
+
+saveRDS(IC_merge, "IC_merge.rds")
+IC_merge <- readRDS("IC_merge.rds")
+
+
+
