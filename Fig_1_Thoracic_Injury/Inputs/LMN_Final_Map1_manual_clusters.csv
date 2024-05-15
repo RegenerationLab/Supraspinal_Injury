@@ -1,0 +1,18 @@
+seurat_clusters,manual.cluster.1,Marker,Cort_v_Subcort,manual.cluster.2
+0,CST,Crym,Cortical,CST
+1,CST,Crym,Cortical,CST
+10,PVH,Sim1,Subcortical,HYP
+11,LH,Plagl1,Subcortical,HYP
+4,RN,Ttc6,Subcortical,RN
+17,EW,Cartpt,Subcortical,Other
+16,PAG,Ebf2,Subcortical,Other
+14,LC,Slc6a2,Subcortical,Other
+3,DP,Prdm6,Subcortical,DP
+13,Raphe / Inhib,Tph2,Subcortical,Other
+9,HB-1-Daam2,Daam2,Subcortical,MED
+2,HB-2-Pard3b,Pard3b,Subcortical,MED
+8,HB-3-Col19a1,Col19a1,Subcortical,MED
+5,HB-4-Nox4,Nox4,Subcortical,MED
+12,HB-5-Pappa,Pappa,Subcortical,MED
+7,HB-6-Other,None,Subcortical,MED
+6,HB-6-Other,None,Subcortical,MED
