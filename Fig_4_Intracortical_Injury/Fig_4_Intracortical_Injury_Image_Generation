@@ -1,0 +1,504 @@
+#This script generates images for Figure 4 (intracortical injury response) and
+#associated data in Supplemental Figure 7
+
+#Load the required libraries
+
+library('Seurat')
+library('ggplot2')
+library('plyr')
+library('dplyr')
+library('viridis')
+library('scCustomize')
+library('ggthemes')
+library('plotly')
+library('cowplot')
+library('ggrepel')
+
+#Set directory to load library (this will vary by the user)
+
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_4_Intracortical_1")
+
+#load your RDS file
+IC_merge <- readRDS("IC_merge")
+
+#Set directory to store images (this will vary by the user)
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_4_Intracortical_1/Figure_Panels")
+
+
+#####Generate Figure 4B top - dimplot
+
+Idents(IC_merge) <- "RNA"
+
+DimPlot(IC_merge, reduction = "umap", label = FALSE, pt.size = 1, 
+        label.size = 0, group.by =  "injury.status", cols = c("#5499C7","#F5B041","#F4D03F","#76D7C4"),alpha = 0.3,
+        order = FALSE
+) + NoLegend() + NoAxes() + scale_x_reverse()
+ggsave("Figure_4B.png",height = 3,width = 4,dpi = 300,units = "in")
+
+
+#####Generate Figure 4C -Creb5 featureplot
+
+pal <- viridis(n = 10, option = "D")
+FeaturePlot_scCustom(seurat_object = IC_merge,pt.size = 1, features = "Creb5", colors_use = pal,
+                     order = T) & NoAxes() + theme(axis.text = element_text(size = 20),text = element_text (size = 20))
+ggsave("Figure_4C.png",height = 6,width = 8,dpi = 300,units = "in")
+
+
+#####Generate Figure 4d - MA plots
+
+#Select which data to plot
+#deg_data <- read.csv("IC_1d_DEGs.csv")
+#deg_data <- read.csv("IC_3d_DEGs.csv")
+deg_data <- read.csv("IC_7d_DEGs.csv")
+
+plot_data <- deg_data %>%
+  filter(!grepl("Rik", X), !grepl("^Gm", X),!grepl("Grik", X),!grepl("CAG", X),!grepl("H2B", X),!grepl("80B", X))
+
+#Select genes to label in the plot
+
+plot_data$mark <- ''  # Reset the column
+#selected Gene list
+specific_genes = c("Atf3","Jun","Stmn4","Stat3","Etv1","Fgf1")
+#Total set: "Sox11" "Npas4" "Sprr1a"
+
+#Set text sizes
+inset_text <- 6
+axis_text_size <- 15
+axis_label_size <- 18
+gene_label_size <- 5
+
+#Create plot
+
+plot_data$mark[plot_data$X %in% specific_genes] <- 'specific_gene'
+plot_data$average_expression <- rowMeans(plot_data[,c("pct.1", "pct.2")])
+plot_data$color <- ifelse(plot_data$avg_log2FC >1 & plot_data$p_val_adj < 0.05, "green", ifelse(plot_data$avg_log2FC < -1 & plot_data$p_val_adj < 0.05, "red", "grey"))
+num_upregulated <- sum(plot_data$avg_log2FC > 1 & plot_data$p_val_adj < 0.05)
+num_downregulated <- sum(plot_data$avg_log2FC < -1 & plot_data$p_val_adj < 0.05)
+
+ma_plot <- ggplot(plot_data, aes(x=average_expression, y=avg_log2FC, color=color)) +
+  geom_point(alpha=0.5) +
+  geom_point(data=plot_data[plot_data$mark == 'specific_gene',], aes(x=average_expression, y=avg_log2FC), color="black", size=3, shape=21, fill=plot_data[plot_data$mark == 'specific_gene',]$color) +  # Add bordered points for specific genes
+  geom_text_repel(data = plot_data[plot_data$X %in% specific_genes, ], aes(label = X, x = average_expression, y = avg_log2FC), size=gene_label_size, box.padding = .5, point.padding = 0.5, segment.color = 'black',color = "black") +  # Use ggrepel
+  scale_color_identity() +
+  geom_hline(yintercept = 0, color="black", alpha=0.7, linetype="dashed") +
+  geom_hline(yintercept = 1, color="green", linetype="dashed") +
+  geom_hline(yintercept = -1, color="red", linetype="dashed") +
+  xlab("Average Expression") + ylab("Log2 Fold Change") +
+  theme_few() +
+  theme(axis.text = element_text(size = axis_text_size)) +
+  theme(axis.title = element_text(size = axis_label_size)) +
+  scale_y_continuous(limits=c(-7, 7), breaks=seq(-7, 7, by=1)) +
+  annotate("text", x = Inf, y = Inf, label = paste("Upregulated:", num_upregulated, "\nDownregulated:", num_downregulated), vjust=1.05, hjust=1.05, size=inset_text, color="black")
+# Print the plot
+print(ma_plot)
+
+#Save the plot (select the correct name, matched to which dataset is inputed above)
+#ggsave("Figure_4d_1d_MA.png",height = 3.5,width = 5,dpi = 300,units = "in",bg = "white")
+#ggsave("Figure_4d_3d_MA.png",height = 3.5,width = 5,dpi = 300,units = "in",bg = "white")
+ggsave("Figure_4d_7d_MA.png",height = 3.5,width = 5,dpi = 300,units = "in",bg = "white")
+
+
+#####Generate Figure 4d - Histograms
+
+#Select which data to plot by silencing other two commands
+#deg_data <- read.csv("IC_1d_DEGs.csv")
+#deg_data <- read.csv("IC_3d_DEGs.csv")
+deg_data <- read.csv("IC_7d_DEGs.csv")
+
+plot_data <- deg_data %>%
+  filter(!grepl("Rik", X), !grepl("^Gm", X),!grepl("Grik", X),!grepl("CAG", X),!grepl("H2B", X),!grepl("80B", X))
+
+
+# Define common aesthetics with continuous fill based on avg_log2FC
+common_aes <- aes(x=avg_log2FC, fill=avg_log2FC)
+
+# Define the color scale
+color_scale <- scale_fill_gradient2(low = "red", mid = "black", high = "green", 
+                                    midpoint = 0, limit = c(-3, 3),
+                                    breaks = c(-0.5, 0.5))
+
+# Define common theme
+common_theme <- theme_few() + theme(text = element_text(size = 20)) +
+  theme(axis.text = element_text(size=20),
+        axis.title = element_text(size=20), #face ="bold"
+        plot.title = element_text(size=20, hjust = 0.5))
+
+# Adjust the size of the bin labels here
+label_size <- 5  # Set bin label size
+inset_text <- 8   #Set size of upregulated and downregulated 
+
+# Lower plot (zoomed-in version)
+p1 <- ggplot(plot_data, common_aes) + 
+  geom_histogram(boundary = 0.5, binwidth=0.5, aes(fill = ifelse(avg_log2FC < -1 & plot_data$p_val_adj < 0.05, "Red", ifelse(avg_log2FC > 1 & plot_data$p_val_adj < 0.05, "Green", "Default"))), color="black", alpha=0.2, show.legend=FALSE) +
+  scale_fill_manual(values = c("Red" = "red", "Green" = "green", "Default" = "black")) +
+  geom_vline(xintercept = 0, color="black",alpha=0.2, linetype="dashed", linewidth=0.7) +
+  #geom_vline(xintercept = c(-1, 1), color="grey", linetype="dashed", linewidth=0.7, alpha=0.5) +
+  geom_vline(xintercept = 1, color="green", linetype="dashed", linewidth=0.7, alpha=0.5)+
+  geom_vline(xintercept = -1, color="red", linetype="dashed", linewidth=0.7, alpha=0.5)+
+  geom_text(boundary = 0.5, stat='bin', aes(label=ifelse(..count.. >= 1, ..count.., "")), angle = 90, vjust=0.5, hjust = 0, size=label_size, binwidth=0.5, color="black", 
+            label.padding = unit(0.2, "lines"), label.size = 3, label.r = unit(0.15, "lines"), label.color = NA, fill="white") +
+  xlab("Log2 Fold Change") + ylab("Number of Genes") +
+  scale_x_continuous(breaks=seq(-6, 6, by=1), limits=c(-6, 6)) + 
+  scale_y_continuous(breaks = seq(0, 400, by = 200)) +
+  coord_cartesian(ylim = c(0, 400)) + 
+  common_theme
+
+# Upper plot (for the range with fewer genes)
+p2 <- ggplot(plot_data, common_aes) + 
+  geom_histogram(boundary = 0.5, binwidth=0.5, aes(fill = ifelse(avg_log2FC < -1 & plot_data$p_val_adj < 0.05, "Red", ifelse(avg_log2FC > 1 & plot_data$p_val_adj < 0.05, "Green", "Default"))), color="black", alpha=0.2, show.legend=FALSE) +
+  scale_fill_manual(values = c("Red" = "red", "Green" = "green", "Default" = "black")) +
+  geom_vline(xintercept = 0, color="black",alpha=0.2, linetype="dashed", linewidth=0.7) +
+  geom_vline(xintercept = c(-1, 1), color="grey", linetype="dashed", linewidth=0.7, alpha=0.5) +
+  geom_vline(xintercept = 1, color="green", linetype="dashed", linewidth=0.7, alpha=0.5)+
+  geom_vline(xintercept = -1, color="red", linetype="dashed", linewidth=0.7, alpha=0.5)+
+  geom_text(boundary = 0.5, stat='bin', aes(label=ifelse(..count.. >= 600, ..count.., "")), angle = 90, vjust=0.5, hjust = 0, size=label_size, binwidth=0.5, color="black",label.padding = unit(0.2, "lines"), label.size = 3, label.r = unit(0.15, "lines"), label.color = NA, fill="white") +
+  coord_cartesian(ylim = c(1000, 14000)) + 
+  common_theme +
+  xlab("Log2 Fold Change") + ylab("Number of Genes") + 
+  scale_x_continuous(breaks=seq(-6, 6, by=1), limits=c(-6, 6)) + 
+  scale_y_continuous(breaks = seq(0,15000,by=3000)) +
+  annotate("text", x=-2, y=7000, label="Downregulated", size=inset_text, color="red", angle= 90) +
+  annotate("text", x=2, y=7000, label="Upregulated", size=inset_text, color="green", angle = 270) 
+  #annotate("text", x=0, y=13500, label="No Change", size=inset_text, color="blue", angle = 0)
+
+p3 <- p2 + 
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) 
+p4 = p1 +
+  theme(axis.title.y = element_blank(),axis.text.x= element_text(angle = 0)) 
+
+# Combine the two plots with p1 at the bottom
+combined_plot <- plot_grid(p3, p4, ncol=1, align='v', rel_heights = c(2/3, 1/3))
+print(combined_plot)
+
+#ggsave("Figure_4d_IC_1d_histogram.png",height = 5,width = 7,dpi = 300,units = "in",bg = "white")
+#ggsave("Figure_4d_IC_3d_histogram.png",height = 5,width = 7,dpi = 300,units = "in",bg = "white")
+ggsave("Figure_4d_IC_7d_histogram.png",height = 5,width = 7,dpi = 300,units = "in",bg = "white")
+
+
+#Generate Figure 4e GO plot
+
+#Set working directory (contains all lists of DEGs and will receive output images)
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_4_Intracortical_1/Figure_Panels")
+
+#Select the input list (silence all but one with #)
+go_input = read.csv("IC_1d_DEGs.csv")
+#go_input = read.csv("IC_3d_DEGs.csv")
+#go_input = read.csv("IC_7d_DEGs.csv")
+
+#Filter the input list - the "Rik" and other filters should not be needed, but the log2FC and p_val are important
+go_input = go_input %>% filter(!grepl("Rik", X), !grepl("^Gm", X),!grepl("Grik", X),
+                               !grepl("CAG", X),!grepl("H2B", X),!grepl("80B", X),!grepl("BC0", X),
+                               !grepl("AAV", X))
+
+#Filter according to desire thresholds
+go_input = go_input %>% filter(go_input$avg_log2FC > 1 & go_input$p_val_adj < 0.05)
+
+#Further filter the input - not strictly necessary, just removing extraneous information
+go_input = go_input[,c(1,2,5)] # make sure you have column 1 Gene_name, column 2 Foldchange , column 5 adj.Pvalue
+
+#Translate gene symbols into EntrizID
+my.symbols = go_input$X
+Entrezid=AnnotationDbi::select(org.Mm.eg.db, keys = my.symbols,columns = c("ENTREZID", "SYMBOL"),keytype = "SYMBOL") # converting your gene name to ENTREZID
+Embryo_annotation=Entrezid$ENTREZID #extrating only your entrezid for the input
+genelist=sort(Embryo_annotation,decreasing = TRUE) #sorting the ID
+genelist=na.omit(genelist) # removing the Null values
+
+#create background set
+background = read.csv("Background_GO.csv")
+background.symbols = background$X
+Background_Entrezid=AnnotationDbi::select(org.Mm.eg.db, keys = background.symbols,columns = c("ENTREZID", "SYMBOL"),keytype = "SYMBOL")
+Background_annotation=Background_Entrezid$ENTREZID
+Background_annotation = sort(Background_annotation,decreasing=TRUE)
+Background_annotation=na.omit(Background_annotation)
+
+ego=enrichGO(gene = genelist,universe = Background_annotation,OrgDb = org.Mm.eg.db,
+             ont = "all", readable = TRUE, minGSSize = 3, maxGSSize = 500,pvalueCutoff = 0.05)
+dotplot(ego)
+
+ego_2 <- simplify(ego, cutoff=0.7, by="p.adjust", select_fun=min)
+
+dotplot(ego_2)
+
+write.csv(ego_2,"IC_1d_GO.csv")
+#write.csv(ego_2,"IC_3d_GO.csv")
+#write.csv(ego_2,"IC_7d_GO.csv")
+
+
+#In excel, combine the top ten rows of each of the three outputs and add a column called "Sample"
+#that indicates the origin of each data row
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(reshape2)
+
+# Load the data
+data <- read.csv("IC_Combined_GO.csv")
+
+# Preprocessing
+data$Description <- factor(data$Description, levels = unique(data$Description))
+data <- data %>% 
+  mutate(p.adjust = ifelse(is.na(p.adjust) | p.adjust <= 0, 1, p.adjust)) %>% 
+  dplyr::select(Description, Count, p.adjust, Sample)  # Simplify column selection
+
+# Create a separate data frame for time points and counts
+time_data <- data %>% 
+  dplyr::select(Description, Count, Sample) %>% 
+  tidyr::spread(key = Sample, value = Count)  # Spread time points across columns
+time_data[is.na(time_data)] <- 0  # Replace NA with 0
+
+# Melt the time point data
+data_melted <- reshape2::melt(time_data, id.vars = 'Description')
+
+# Remove rows where count (value) is zero
+data_melted <- data_melted[data_melted$value > 0,]
+
+# Merge back with original data to get p.adjust values
+final_data <- merge(data_melted, data, by = "Description")
+
+# Convert 'variable' to a factor with desired levels
+final_data$variable <- factor(final_data$variable, levels = c("IC_1d", "IC_3d", "IC_7d"))
+
+# Plotting verification
+ggplot(final_data, aes(x = variable, y = Description)) +
+  geom_point(shape = 21, aes(fill = -log10(p.adjust), size = value)) +
+  scale_fill_viridis_c(option = "D", name = "-log10(p-adjust)") +
+  scale_size_continuous(name = "Gene count") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "black",size = 16), # Set all text color to black
+        axis.text = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title = element_text(color = "black"),
+        legend.title = element_text(color = "black"),
+        legend.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "right")+#,
+  #legend.box = "horizontal",
+  #legend.direction = "horizontal") +
+  labs(title = "", x = "", y = "")
+
+ggplot(final_data, aes(x = variable, y = Description)) +
+  geom_point(shape = 21, aes(fill = -log10(p.adjust), size = value)) +
+  scale_fill_viridis_c(option = "D", name = "-log10(p-adjust)") + # use option = "F" for the Downregulated. pathway
+  scale_size_continuous(name = "Gene count") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "black",size = 16), # Set all text color to black
+        axis.text = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title = element_text(color = "black"),
+        legend.title = element_text(color = "black"),
+        legend.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "right")+#,
+  #legend.box = "horizontal",
+  #legend.direction = "horizontal") +
+  labs(title = "", x = "", y = "") + 
+  scale_y_discrete(labels = label_wrap_gen(width = 80))
+ggsave("Gene_Ontology_combined_upregulated._2.png",height = 6,width = 6,dpi = 300,units = "in",bg = "white")
+
+
+
+############################################################################################################################
+
+### Generate Supp_Fig_7 - MA plots ###
+
+ 
+#Set directory to store images (this will vary by the user)
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_4_Intracortical_1/Figure_Panels/Sup_Fig_7")
+
+#The following commands are designed to be run three times, once for each of the
+#three timepoints. In each of the three runs the corresponding input and save commands should be
+#selected.
+
+
+#Input data (Select data to plot by silencing other two commands)
+
+#deg_data <- read.csv("IC_1d_DEGs.csv")
+#deg_data <- read.csv("IC_3d_DEGs.csv")
+deg_data <- read.csv("IC_7d_DEGs.csv")
+
+#Filter data (should not be necessary because the .csv is pre-filtered but is an extra check)
+plot_data <- deg_data %>%
+  filter(!grepl("Rik", X), !grepl("^Gm", X),!grepl("Grik", X),!grepl("CAG", X),!grepl("H2B", X),!grepl("80B", X))
+
+#Select genes to label in the plot
+
+plot_data$mark <- ''  # Reset the column
+#selected Gene list
+specific_genes = c("Atf3","Gadd45g", "Bcl2l11","Casp9", "Bcl6",
+"Sv2b","Vamp1","Syt2","Rab3a","Rph3a","Kcna2","Sv2b",
+"Sox11","Stat3","Klf6","Smad1","Gap43","L1cam","Stmn2","Gal","Itga9","Inppk5")
+#Total set: "Sox11" "Npas4" "Sprr1a"
+
+#Set text sizes
+inset_text <- 6
+axis_text_size <- 15
+axis_label_size <- 18
+gene_label_size <- 6
+
+#Create plot
+
+plot_data$mark[plot_data$X %in% specific_genes] <- 'specific_gene'
+plot_data$average_expression <- rowMeans(plot_data[,c("pct.1", "pct.2")])
+plot_data$color <- ifelse(plot_data$avg_log2FC >0.5 & plot_data$p_val_adj < 0.05, "green", ifelse(plot_data$avg_log2FC < -0.5 & plot_data$p_val_adj < 0.05, "red", "grey"))
+num_upregulated <- sum(plot_data$avg_log2FC > 0.5 & plot_data$p_val_adj < 0.05)
+num_downregulated <- sum(plot_data$avg_log2FC < -0.5 & plot_data$p_val_adj < 0.05)
+
+ma_plot <- ggplot(plot_data, aes(x=average_expression, y=avg_log2FC, color=color)) +
+  geom_point(alpha=0.5) +
+  geom_point(data=plot_data[plot_data$mark == 'specific_gene',], aes(x=average_expression, y=avg_log2FC), color="black", size=3, shape=21, fill=plot_data[plot_data$mark == 'specific_gene',]$color) +  # Add bordered points for specific genes
+  geom_text_repel(data = plot_data[plot_data$X %in% specific_genes, ], aes(label = X, x = average_expression, y = avg_log2FC), size=gene_label_size, box.padding = .5, point.padding = 0.5, segment.color = 'black',color = "black") +  # Use ggrepel
+  scale_color_identity() +
+  geom_hline(yintercept = 0, color="black", alpha=0.7, linetype="dashed") +
+  geom_hline(yintercept = 0.5, color="green", linetype="dashed") +
+  geom_hline(yintercept = -0.5, color="red", linetype="dashed") +
+  xlab("Average Expression") + ylab("Log2 Fold Change") +
+  theme_few() +
+  theme(axis.text = element_text(size = axis_text_size)) +
+  theme(axis.title = element_text(size = axis_label_size)) +
+  scale_y_continuous(limits=c(-7, 7), breaks=seq(-7, 7, by=1)) +
+  annotate("text", x = Inf, y = Inf, label = paste("Upregulated:", num_upregulated, "\nDownregulated:", num_downregulated), vjust=1.05, hjust=1.02, size=inset_text, color="black")
+# Print the plot
+print(ma_plot)
+
+#Save the plot (select the correct name, matched to which dataset is inputed above)
+#ggsave("Sup7_IC_1d.png",height = 4.3,width = 5.8,dpi = 300,units = "in",bg = "white")
+#ggsave("Sup7_IC_3d.png",height = 4.3,width = 5.8,dpi = 300,units = "in",bg = "white")
+ggsave("Sup7_IC_7d.png",height = 4.3,width = 5.8,dpi = 300,units = "in",bg = "white")
+
+
+
+
+### Generate Supp_Fig_7 - GO plot ###
+
+#Set directory to store images (this will vary by the user)
+setwd("C:/Users/blackmorem/Dropbox/Single cell injury paper/!JAN_2024/!FINAL_ANALYSES/Fig_4_Intracortical_1/Figure_Panels/Sup_Fig_7")
+
+#Select the input list (silence all but one with #)
+#go_input = read.csv("IC_1d_DEGs.csv")
+go_input = read.csv("IC_3d_DEGs.csv")
+#go_input = read.csv("IC_7d_DEGs.csv")
+
+#Filter the input list - the "Rik" and other filters should not be needed, but the log2FC and p_val are important
+go_input = go_input %>% filter(!grepl("Rik", X), !grepl("^Gm", X),!grepl("Grik", X),
+                               !grepl("CAG", X),!grepl("H2B", X),!grepl("80B", X),!grepl("BC0", X),
+                               !grepl("AAV", X),
+                               go_input$avg_log2FC < -.58 & go_input$p_val_adj < 0.05) #adjust the vales for the up and downregulated 
+
+#Further filter the input - this is likely not necessary
+go_input = go_input[,c(1,2,5)] # make sure you have column 1 Gene_name, column 2 Foldchange , column 5 adj.Pvalue
+
+write.csv(go_input,"go_input.csv")
+
+
+#Translate gene symbols into EntrizID
+my.symbols = go_input$X
+Entrezid=AnnotationDbi::select(org.Mm.eg.db, keys = my.symbols,columns = c("ENTREZID", "SYMBOL"),keytype = "SYMBOL") # converting your gene name to ENTREZID
+Embryo_annotation=Entrezid$ENTREZID #extrating only your entrezid for the input
+genelist=sort(Embryo_annotation,decreasing = TRUE) #sorting the ID
+genelist=na.omit(genelist) # removing the Null values
+
+#create background set
+background = read.csv("Background_GO.csv")
+#background = background %>% filter (pct.1>-1)
+background.symbols = background$X
+Background_Entrezid=AnnotationDbi::select(org.Mm.eg.db, keys = background.symbols,columns = c("ENTREZID", "SYMBOL"),keytype = "SYMBOL")
+Background_annotation=Background_Entrezid$ENTREZID
+Background_annotation = sort(Background_annotation,decreasing=TRUE)
+Background_annotation=na.omit(Background_annotation)
+
+ego=enrichGO(gene = genelist,universe = Background_annotation,OrgDb = org.Mm.eg.db,
+             ont = "all", readable = TRUE, minGSSize = 3, maxGSSize = 500,pvalueCutoff = 0.05)
+dotplot(ego)
+
+ego_2 <- simplify(ego, cutoff=0.7, by="p.adjust", select_fun=min, measure="Wang")
+
+dotplot(ego_2)
+
+#write.csv(ego_2,"EGO_IC_1d_-0.58.csv")
+write.csv(ego_2,"EGO_IC_3d_-0.58.csv")
+#write.csv(ego_2,"EGO_IC_7d_-0.58.csv")
+
+
+#In excel, combine the top ten rows of each of the three outputs and add a column called "Sample"
+#that indicates the origin of each data row
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(reshape2)
+
+# Load the data
+data <- read.csv("Graph_Input_IC_Down.csv")
+
+
+# Preprocessing
+data$Description <- factor(data$Description, levels = unique(data$Description))
+data <- data %>% 
+  mutate(p.adjust = ifelse(is.na(p.adjust) | p.adjust <= 0, 1, p.adjust)) %>% 
+  dplyr::select(Description, Count, p.adjust, Sample)  # Simplify column selection
+
+# Create a separate data frame for time points and counts
+time_data <- data %>% 
+  dplyr::select(Description, Count, Sample) %>% 
+  tidyr::spread(key = Sample, value = Count)  # Spread time points across columns
+time_data[is.na(time_data)] <- 0  # Replace NA with 0
+
+# Melt the time point data
+data_melted <- reshape2::melt(time_data, id.vars = 'Description')
+
+# Remove rows where count (value) is zero
+data_melted <- data_melted[data_melted$value > 0,]
+
+# Merge back with original data to get p.adjust values
+final_data <- merge(data_melted, data, by = "Description")
+
+# Convert 'variable' to a factor with desired levels
+final_data$variable <- factor(final_data$variable, levels = c("IC_1d", "IC_3d", "IC_7d"))
+
+# Plotting verification
+ggplot(final_data, aes(x = variable, y = Description)) +
+  geom_point(shape = 21, aes(fill = -log10(p.adjust), size = value)) +
+  scale_fill_viridis_c(option = "D", name = "-log10(p-adjust)") +
+  scale_size_continuous(name = "Gene count") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "black",size = 16), # Set all text color to black
+        axis.text = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title = element_text(color = "black"),
+        legend.title = element_text(color = "black"),
+        legend.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "right")+#,
+  #legend.box = "horizontal",
+  #legend.direction = "horizontal") +
+  labs(title = "", x = "", y = "")
+
+ggplot(final_data, aes(x = variable, y = Description)) +
+  geom_point(shape = 21, aes(fill = -log10(p.adjust), size = value)) +
+  scale_fill_viridis_c(option = "F", name = "-log10(p-adjust)") + # use option = "F" for the Downregulated. pathway
+  scale_size_continuous(name = "Gene count") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),
+        text = element_text(color = "black",size = 16), # Set all text color to black
+        axis.text = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.title = element_text(color = "black"),
+        legend.title = element_text(color = "black"),
+        legend.text = element_text(color = "black"),
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "right")+#,
+  #legend.box = "horizontal",
+  #legend.direction = "horizontal") +
+  labs(title = "", x = "", y = "") + 
+  scale_y_discrete(labels = label_wrap_gen(width = 80))
+ggsave("Sup_Fig_7_GO_Enrichment.png",height = 7,width = 6,dpi = 300,units = "in",bg = "white")
