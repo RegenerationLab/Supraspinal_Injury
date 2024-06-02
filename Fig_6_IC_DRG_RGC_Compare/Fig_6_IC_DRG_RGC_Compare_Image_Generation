@@ -19,12 +19,12 @@ library(reshape2)
 library(eulerr)
 
 #specify values to use in venn diagram
-fit <- euler(c('DRG' = 1825,
-               'RGC' = 600,
-               'IC-CST' = 2285,
-               'IC-CST&RGC' = 329,
-               'IC-CST&DRG'=569,
-               'DRG&RGC' = 320,
+fit <- euler(c('DRG' = 1171,
+               'RGC' = 394,
+               'IC-CST' = 1532,
+               'IC-CST&RGC' = 184,
+               'IC-CST&DRG'=424,
+               'DRG&RGC' = 85,
                "IC-CST&DRG&RGC" = 145))
 
 #create venn diagram with custom colors
